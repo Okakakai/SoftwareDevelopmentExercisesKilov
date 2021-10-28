@@ -261,6 +261,10 @@ int editorReadKey(int fd)
 
         case '-':
             return HYPHEN;
+        case 'H':
+            return HOME_KEY;
+        case 'E':
+            return END_KEY;
         default:
             return c;
         }
@@ -770,130 +774,154 @@ void editorMoveCursor(int key)
         }
         break;
 
-        /* Fix cx if the current line has not enough chars. */
-        filerow = E.rowoff + E.cy;
-        filecol = E.coloff + E.cx;
-        row = (filerow >= E.numrows) ? NULL : &E.row[filerow];
-        rowlen = row ? row->size : 0;
-        if (filecol > rowlen)
+    case END_KEY:
+        if (E.screenrows > E.numrows)
         {
-            E.cx -= filecol - rowlen;
-            if (E.cx < 0)
-            {
-                E.coloff += E.cx;
-                E.cx = 0;
-            }
+            E.cx = 0;
+            E.cy = 0;
+        }
+        else
+        {
+            E.cx = 0;
+            E.cy = 0;
+            E.coloff = 0;
+            E.rowoff = E.numrows - E.screenrows;
+            break;
+        }
+
+    case HOME_KEY:
+        E.cx = 0;
+        E.cy = 0;
+        E.coloff = 0;
+        E.rowoff = 0;
+        break;
+    }
+    /* Fix cx if the current line has not enough chars. */
+    filerow = E.rowoff + E.cy;
+    filecol = E.coloff + E.cx;
+    row = (filerow >= E.numrows) ? NULL : &E.row[filerow];
+    rowlen = row ? row->size : 0;
+    if (filecol > rowlen)
+    {
+        E.cx -= filecol - rowlen;
+        if (E.cx < 0)
+        {
+            E.coloff += E.cx;
+            E.cx = 0;
         }
     }
+}
 
 /* Process events arriving from the standard input, which is, the user
  * is typing stuff on the terminal. */
 #define KILO_QUIT_TIMES 3
-    void editorProcessKeypress(int fd)
-    {
-        /* When the file is modified, requires Ctrl-q to be pressed N times
+void editorProcessKeypress(int fd)
+{
+    /* When the file is modified, requires Ctrl-q to be pressed N times
      * before actually quitting. */
-        static int quit_times = KILO_QUIT_TIMES;
+    static int quit_times = KILO_QUIT_TIMES;
 
-        int c = editorReadKey(fd);
-        switch (c)
-        {
-        case CTRL_C: /* Ctrl-c */
-            /* We ignore ctrl-c, it can't be so simple to lose the changes
+    int c = editorReadKey(fd);
+    switch (c)
+    {
+    case CTRL_C: /* Ctrl-c */
+        /* We ignore ctrl-c, it can't be so simple to lose the changes
          * to the edited file. */
-            break;
-        case CTRL_Q: /* Ctrl-q */
-            /* Quit if the file was already saved. */
-            if (E.dirty && quit_times)
-            {
-                editorSetStatusMessage("WARNING!!! File has unsaved changes. "
-                                       "Press Ctrl-Q %d more times to quit.",
-                                       quit_times);
-                quit_times--;
-                return;
-            }
-            exit(0);
-            break;
-        case PAGE_UP:
-        case PAGE_DOWN:
-            if (c == PAGE_UP && E.cy != 0)
-                E.cy = 0;
-            else if (c == PAGE_DOWN && E.cy != E.screenrows - 1)
-                E.cy = E.screenrows - 1;
-            {
-                int times = E.screenrows;
-                while (times--)
-                    editorMoveCursor(c == PAGE_UP ? ARROW_UP : ARROW_DOWN);
-            }
-            break;
-
-        case ARROW_UP:
-        case ARROW_DOWN:
-        case ARROW_LEFT:
-        case ARROW_RIGHT:
-            editorMoveCursor(c);
-            break;
-        case CTRL_L: /* ctrl+l, clear screen */
-            /* Just refresht the line as side effect. */
-            break;
-        case ESC:
-            /* Nothing to do for ESC in this mode. */
-            break;
-
-        // add
-        case HYPHEN:
-        case ENTER:
-            editorMoveCursor(c);
-            break;
-
-        default:
-            break;
-        }
-
-        quit_times = KILO_QUIT_TIMES; /* Reset it to the original value. */
-    }
-
-    void updateWindowSize(void)
-    {
-        if (getWindowSize(STDIN_FILENO, STDOUT_FILENO,
-                          &E.screenrows, &E.screencols) == -1)
+        break;
+    case CTRL_Q: /* Ctrl-q */
+        /* Quit if the file was already saved. */
+        if (E.dirty && quit_times)
         {
-            perror("Unable to query the screen for size (columns / rows)");
-            exit(1);
+            editorSetStatusMessage("WARNING!!! File has unsaved changes. "
+                                   "Press Ctrl-Q %d more times to quit.",
+                                   quit_times);
+            quit_times--;
+            return;
         }
-        E.screenrows -= 2; /* Get room for status bar. */
-    }
-
-    void initEditor(void)
-    {
-        E.cx = 0;
-        E.cy = 0;
-        E.rowoff = 0;
-        E.coloff = 0;
-        E.numrows = 0;
-        E.row = NULL;
-        E.dirty = 0;
-        E.filename = NULL;
-        updateWindowSize();
-    }
-
-    int main(int argc, char **argv)
-    {
-        if (argc != 2)
+        exit(0);
+        break;
+    case PAGE_UP:
+    case PAGE_DOWN:
+        if (c == PAGE_UP && E.cy != 0)
+            E.cy = 0;
+        else if (c == PAGE_DOWN && E.cy != E.screenrows - 1)
+            E.cy = E.screenrows - 1;
         {
-            fprintf(stderr, "Usage: kilo <filename>\n");
-            exit(1);
+            int times = E.screenrows;
+            while (times--)
+                editorMoveCursor(c == PAGE_UP ? ARROW_UP : ARROW_DOWN);
         }
+        break;
 
-        initEditor();
-        editorOpen(argv[1]);
-        enableRawMode(STDIN_FILENO);
-        editorSetStatusMessage(
-            "HELP: Ctrl-Q = quit");
-        while (1)
-        {
-            editorRefreshScreen();
-            editorProcessKeypress(STDIN_FILENO);
-        }
-        return 0;
+    case ARROW_UP:
+    case ARROW_DOWN:
+    case ARROW_LEFT:
+    case ARROW_RIGHT:
+        editorMoveCursor(c);
+        break;
+    case CTRL_L: /* ctrl+l, clear screen */
+        /* Just refresht the line as side effect. */
+        break;
+    case ESC:
+        /* Nothing to do for ESC in this mode. */
+        break;
+
+    // add
+    case HYPHEN:
+    case ENTER:
+    case END_KEY:
+    case HOME_KEY:
+        editorMoveCursor(c);
+        break;
+
+    default:
+        break;
     }
+
+    quit_times = KILO_QUIT_TIMES; /* Reset it to the original value. */
+}
+
+void updateWindowSize(void)
+{
+    if (getWindowSize(STDIN_FILENO, STDOUT_FILENO,
+                      &E.screenrows, &E.screencols) == -1)
+    {
+        perror("Unable to query the screen for size (columns / rows)");
+        exit(1);
+    }
+    E.screenrows -= 2; /* Get room for status bar. */
+}
+
+void initEditor(void)
+{
+    E.cx = 0;
+    E.cy = 0;
+    E.rowoff = 0;
+    E.coloff = 0;
+    E.numrows = 0;
+    E.row = NULL;
+    E.dirty = 0;
+    E.filename = NULL;
+    updateWindowSize();
+}
+
+int main(int argc, char **argv)
+{
+    if (argc != 2)
+    {
+        fprintf(stderr, "Usage: kilo <filename>\n");
+        exit(1);
+    }
+
+    initEditor();
+    editorOpen(argv[1]);
+    enableRawMode(STDIN_FILENO);
+    editorSetStatusMessage(
+        "HELP: Ctrl-Q = quit");
+    while (1)
+    {
+        editorRefreshScreen();
+        editorProcessKeypress(STDIN_FILENO);
+    }
+    return 0;
+}
